@@ -50,12 +50,8 @@ minigame.isDevTool = my.isIDE;
 
 Object.defineProperty(minigame, 'isLandscape', {
     get () {
-        const locSystemInfo = minigame.getSystemInfoSync();
-        if (typeof locSystemInfo.deviceOrientation === 'string') {
-            return locSystemInfo.deviceOrientation.startsWith('landscape');
-        } else {
-            return locSystemInfo.screenWidth > locSystemInfo.screenHeight;
-        }
+        const windowInfo = my.getWindowInfoSync();
+        return windowInfo.windowWidth > windowInfo.windowHeight;
     },
 });
 // init landscapeOrientation as LANDSCAPE_RIGHT
@@ -98,8 +94,6 @@ minigame.createInnerAudioContext = function (): InnerAudioContext {
     // NOTE: `onCanPlay` is not standard minigame interface,
     // so here we mark audio as type of any
     const audio: any = polyfilledCreateInnerAudio();
-    audio.onCanplay = audio.onCanPlay.bind(audio);
-    delete audio.onCanPlay;
     return audio as InnerAudioContext;
 };
 // #region Audio

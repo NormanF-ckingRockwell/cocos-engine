@@ -95,7 +95,7 @@ export class RenderEntity {
     //     this._renderEntityType = val;
     // }
 
-    protected _color: Color = Color.WHITE;
+    protected _color: Color = Color.WHITE.clone();
     get color (): Color {
         return this._color;
     }
@@ -122,6 +122,10 @@ export class RenderEntity {
 
     protected _colorDirty = true;
     get colorDirty (): boolean {
+        if (JSB) {
+            // Synchronize values set from native to JS
+            this._colorDirty = !!this._boolSharedBuffer[RenderEntityBoolSharedBufferView.colorDirty];
+        }
         return this._colorDirty;
     }
     set colorDirty (val: boolean) {

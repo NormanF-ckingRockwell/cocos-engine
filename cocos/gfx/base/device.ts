@@ -78,6 +78,14 @@ export abstract class Device {
     }
 
     /**
+     * @en The current format of the swapchain being used.
+     * @zh 当前使用的swapchain的格式。
+     */
+    get swapchainFormat (): Format {
+        return this._swapchainFormat;
+    }
+
+    /**
      * @en Renderer description.
      * @zh 渲染器描述。
      */
@@ -158,10 +166,11 @@ export abstract class Device {
     protected _generalBarrierss = new Map<number, GeneralBarrier>();
     protected _textureBarriers = new Map<number, TextureBarrier>();
     protected _bufferBarriers = new Map<number, BufferBarrier>();
+    protected _swapchainFormat = Format.RGBA8;
 
     public static canvas: HTMLCanvasElement; // Hack for WebGL device initialization process
 
-    public abstract initialize (info: Readonly<DeviceInfo>): boolean;
+    public abstract initialize (info: Readonly<DeviceInfo>): boolean | Promise<boolean>;
 
     public abstract destroy (): void;
 
@@ -358,7 +367,9 @@ export abstract class Device {
      * @zh 是否开启自动GFX内部barrier推导，web无影响。
      * @param format The GFX format to be queried.
      */
-    public enableAutoBarrier (en: boolean): void {}
+    public enableAutoBarrier (en: boolean): void {
+        // noop
+    }
 
     /**
      * @en Get maximum supported sample count.

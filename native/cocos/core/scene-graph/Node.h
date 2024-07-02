@@ -412,16 +412,17 @@ public:
 
     void setAngle(float);
 
-    inline const Vec3 &getEulerAngles() {
+    inline const Vec3 &getEulerAngles() const {
         if (_eulerDirty) {
-            Quaternion::toEuler(_localRotation, false, &_euler);
-            _eulerDirty = false;
+            auto *thiz = const_cast<Node *>(this);
+            Quaternion::toEuler(_localRotation, false, &(thiz->_euler));
+            thiz->_eulerDirty = false;
         }
         return _euler;
     }
 
     inline float getAngle() const {
-        return _euler.z;
+        return getEulerAngles().z;
     }
 
     inline Vec3 getForward() const {
@@ -455,6 +456,10 @@ public:
     }
 
     inline void setMobility(MobilityMode m) {
+        if (_mobility == m) {
+            return;
+        }
+
         _mobility = m;
         emit<MobilityChanged>();
     }
@@ -480,6 +485,10 @@ public:
 
     inline bool isTransformDirty() const { return _transformFlags != static_cast<uint32_t>(TransformBit::NONE); }
     inline void setLayer(uint32_t layer) {
+        if (_layer == layer) {
+            return;
+        }
+
         _layer = layer;
         emit<LayerChanged>(layer);
     }

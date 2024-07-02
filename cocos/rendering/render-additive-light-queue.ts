@@ -443,7 +443,7 @@ export class RenderAdditiveLightQueue {
                 if (shadowFrameBufferMap.has(light)) {
                     const texture = shadowFrameBufferMap.get(light)?.colorTextures[0];
                     if (texture) {
-                        descriptorSet.bindTexture(UNIFORM_SPOT_SHADOW_MAP_TEXTURE_BINDING, texture);
+                        globalDSManager.bindTexture(UNIFORM_SPOT_SHADOW_MAP_TEXTURE_BINDING, texture);
                     }
                 }
                 break;
@@ -470,7 +470,7 @@ export class RenderAdditiveLightQueue {
             }
             default:
             }
-            descriptorSet.update();
+            globalDSManager.update();
             const binding = isEnableEffect() ? getDescBindingFromName('CCShadow') : UBOShadow.BINDING;
             cmdBuff.updateBuffer(descriptorSet.getBuffer(binding)!, this._shadowUBO);
         }
@@ -553,6 +553,13 @@ export class RenderAdditiveLightQueue {
                     _vec4Array[3] = (light as SpotLight).luminance;
                 }
                 this._lightBufferData.set(_vec4Array, offset + UBOForwardLight.LIGHT_COLOR_OFFSET);
+
+                // cc_lightBoundingSizeVS, light angle attenuation strength
+                _vec4Array[0] = 0;
+                _vec4Array[1] = 0;
+                _vec4Array[2] = 0;
+                _vec4Array[3] = (light as SpotLight).angleAttenuationStrength;
+                this._lightBufferData.set(_vec4Array, offset + UBOForwardLight.LIGHT_BOUNDING_SIZE_VS_OFFSET);
                 break;
             case LightType.POINT:
                 // UBOForwardLight

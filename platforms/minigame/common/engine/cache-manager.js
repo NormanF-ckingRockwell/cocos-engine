@@ -184,8 +184,13 @@ var cacheManager = {
             return a.lastTime - b.lastTime;
         });
         caches.length = Math.floor(caches.length / 3);
-        if (caches.length === 0) return;
+        if (caches.length === 0) {
+            cleaning = false;
+            return;
+        }
         for (var i = 0, l = caches.length; i < l; i++) {
+            var cacheKey = cc.assetManager.utils.getUuidFromURL(caches[i].originUrl) + "@native";
+            cc.assetManager._files.remove(cacheKey);
             this.cachedFiles.remove(caches[i].originUrl);
         }
         

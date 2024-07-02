@@ -25,8 +25,9 @@
 import { legacyCC } from './core/global-exports';
 import { DataPoolManager } from './3d/skeletal-animation/data-pool-manager';
 import { Device, deviceManager } from './gfx';
-import { settings, Settings, warnID, Pool, macro } from './core';
+import { settings, Settings, warnID, Pool, macro, log } from './core';
 import { ForwardPipeline } from './rendering';
+import { PipelineEventProcessor } from './rendering/pipeline-event';
 import type { Root as JsbRoot } from './root';
 
 declare const nr: any;
@@ -90,23 +91,13 @@ Object.defineProperty(rootProto, 'pipelineEvent', {
     }
 });
 
-class DummyPipelineEvent {
-    on(type: any, callback: any, target?: any, once?: boolean) { }
-    once(type: any, callback: any, target?: any) { }
-    off(type: any, callback?: any, target?: any) { }
-    emit(type: any, arg0?: any, arg1?: any, arg2?: any, arg3?: any, arg4?: any) { }
-    targetOff(typeOrTarget: any) { }
-    removeAll(typeOrTarget: any) { }
-    hasEventListener(type: any, callback?: any, target?: any): boolean { return false; }
-}
-
 rootProto._ctor = function (device: Device) {
     this._device = device;
     this._dataPoolMgr = legacyCC.internal.DataPoolManager && new legacyCC.internal.DataPoolManager(device) as DataPoolManager;
     this._modelPools = new Map();
     this._lightPools = new Map();
     this._batcher = null;
-    this._pipelineEvent = new DummyPipelineEvent();
+    this._pipelineEvent = new PipelineEventProcessor();
     this._registerListeners();
 };
 
@@ -232,6 +223,7 @@ rootProto.onGlobalPipelineStateChanged = function() {
         if (typeof builder.onGlobalPipelineStateChanged === 'function') {
             builder.onGlobalPipelineStateChanged();
         }
+        legacyCC.rendering.forceResizeAllWindows();
     }
 }
 
@@ -246,6 +238,7 @@ rootProto.setRenderPipeline = function (pipeline) {
     if (macro.CUSTOM_PIPELINE_NAME !== '' && legacyCC.rendering && this.usesCustomPipeline) {
         legacyCC.rendering.createCustomPipeline();
         ppl = oldSetPipeline.call(this, null);
+        log(`Using custom pipeline: ${macro.CUSTOM_PIPELINE_NAME}`);
     } else {
         if (!pipeline) {
             // pipeline should not be created in C++, ._ctor need to be triggered

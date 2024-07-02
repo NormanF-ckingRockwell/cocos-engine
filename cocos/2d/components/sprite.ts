@@ -27,7 +27,7 @@ import { ccclass, help, executionOrder, menu, tooltip, displayOrder, type, range
 import { BUILD, EDITOR } from 'internal:constants';
 import { SpriteAtlas } from '../assets/sprite-atlas';
 import { SpriteFrame } from '../assets/sprite-frame';
-import { Vec2, cclegacy, ccenum, clamp } from '../../core';
+import { Vec2, cclegacy, ccenum, clamp, warn } from '../../core';
 import { IBatcher } from '../renderer/i-batcher';
 import { UIRenderer, InstanceMaterialType } from '../framework/ui-renderer';
 import { PixelFormat } from '../../asset/assets/asset-enum';
@@ -526,7 +526,7 @@ export class Sprite extends UIRenderer {
      */
     public changeSpriteFrameFromAtlas (name: string): void {
         if (!this._atlas) {
-            console.warn('SpriteAtlas is null.');
+            warn('SpriteAtlas is null.');
             return;
         }
         const sprite = this._atlas.getSpriteFrame(name);
@@ -565,12 +565,8 @@ export class Sprite extends UIRenderer {
     protected _updateBuiltinMaterial (): Material {
         let mat = super._updateBuiltinMaterial();
         if (this.spriteFrame && this.spriteFrame.texture instanceof RenderTexture) {
-            const defines = { SAMPLE_FROM_RT: true, ...mat.passes[0].defines };
             const renderMat = new Material();
-            renderMat.initialize({
-                effectAsset: mat.effectAsset,
-                defines,
-            });
+            renderMat.copy(mat, { defines: { SAMPLE_FROM_RT: true } });
             mat = renderMat;
         }
         return mat;
@@ -696,6 +692,12 @@ export class Sprite extends UIRenderer {
             }
             if (textureChanged) {
                 if (this.renderData) this.renderData.textureDirty = true;
+                // texture type changed, set this._instanceMaterialType to default value
+                const oldIsRT = oldFrame ? oldFrame.texture instanceof RenderTexture : false;
+                const newIsRT = spriteFrame.texture instanceof RenderTexture;
+                if (oldIsRT !== newIsRT) {
+                    this._instanceMaterialType = -1;
+                }
                 this.changeMaterialForDefine();
             }
             this._applySpriteSize();

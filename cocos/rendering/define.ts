@@ -29,6 +29,12 @@ import { Layers } from '../scene-graph/layers';
 import { cclegacy } from '../core';
 import { BindingMappingInfo, DescriptorType, Type, ShaderStageFlagBit, UniformStorageBuffer, DescriptorSetLayoutBinding,
     Uniform, UniformBlock, UniformSamplerTexture, UniformStorageImage, Device, FormatFeatureBit, Format, API,
+    Texture,
+    TextureInfo,
+    TextureType,
+    TextureUsageBit,
+    TextureFlagBit,
+    SampleCount,
 } from '../gfx';
 
 export const PIPELINE_FLOW_MAIN = 'MainFlow';
@@ -384,7 +390,7 @@ export class UBOLocal {
 
     public static readonly NAME = 'CCLocal';
     public static readonly BINDING = ModelLocalBindings.UBO_LOCAL;
-    public static readonly DESCRIPTOR = new DescriptorSetLayoutBinding(UBOLocal.BINDING, DescriptorType.UNIFORM_BUFFER, 1, ShaderStageFlagBit.VERTEX | ShaderStageFlagBit.COMPUTE);
+    public static readonly DESCRIPTOR = new DescriptorSetLayoutBinding(UBOLocal.BINDING, DescriptorType.UNIFORM_BUFFER, 1, ShaderStageFlagBit.VERTEX | ShaderStageFlagBit.FRAGMENT | ShaderStageFlagBit.COMPUTE);
     public static readonly LAYOUT = new UniformBlock(SetIndex.LOCAL, UBOLocal.BINDING, UBOLocal.NAME, [
         new Uniform('cc_matWorld', Type.MAT4, 1),
         new Uniform('cc_matWorldIT', Type.MAT4, 1),
@@ -812,6 +818,25 @@ export function supportsR16HalfFloatTexture (device: Device): boolean {
         === (FormatFeatureBit.RENDER_TARGET | FormatFeatureBit.SAMPLED_TEXTURE);
 }
 
+let dftShadowTexture: Texture;
+export function getDefaultShadowTexture (device: Device): Texture {
+    if (dftShadowTexture) return dftShadowTexture;
+    const texInfo = new TextureInfo(
+        TextureType.TEX2D,
+        TextureUsageBit.NONE,
+        supportsR32FloatTexture(device) ? Format.R32F : Format.RGBA8,
+        16,
+        16,
+        TextureFlagBit.NONE,
+        1,
+        1,
+        SampleCount.X1,
+        1,
+    );
+    dftShadowTexture = device.createTexture(texInfo);
+    return dftShadowTexture;
+}
+
 /**
  * @en Does the device support single-channeled float texture? (for both color attachment and sampling)
  * @zh 当前设备是否支持单通道浮点贴图？（颜色输出和采样）
@@ -827,9 +852,10 @@ export function supportsR32FloatTexture (device: Device): boolean {
  * @zh 当前设备是否支持4通道浮点贴图？（颜色输出和采样）
  */
 export function supportsRGBA16HalfFloatTexture (device: Device): boolean {
+    // WebGL: https://developer.mozilla.org/en-US/docs/Web/API/OES_texture_half_float#browser_compatibility
+    // GLES2: https://registry.khronos.org/OpenGL/extensions/OES/OES_texture_float.txt
     return (device.getFormatFeatures(Format.RGBA16F) & (FormatFeatureBit.RENDER_TARGET | FormatFeatureBit.SAMPLED_TEXTURE))
-        === (FormatFeatureBit.RENDER_TARGET | FormatFeatureBit.SAMPLED_TEXTURE)
-        && !(device.gfxAPI === API.WEBGL); // wegl 1  Single-channel float type is not supported under webgl1, so it is excluded
+        === (FormatFeatureBit.RENDER_TARGET | FormatFeatureBit.SAMPLED_TEXTURE);
 }
 
 /**
@@ -837,9 +863,10 @@ export function supportsRGBA16HalfFloatTexture (device: Device): boolean {
  * @zh 当前设备是否支持4通道浮点贴图？（颜色输出和采样）
  */
 export function supportsRGBA32FloatTexture (device: Device): boolean {
+    // WebGL: https://developer.mozilla.org/en-US/docs/Web/API/OES_texture_float#browser_compatibility
+    // GLES2: https://registry.khronos.org/OpenGL/extensions/OES/OES_texture_float.txt
     return (device.getFormatFeatures(Format.RGBA32F) & (FormatFeatureBit.RENDER_TARGET | FormatFeatureBit.SAMPLED_TEXTURE))
-        === (FormatFeatureBit.RENDER_TARGET | FormatFeatureBit.SAMPLED_TEXTURE)
-        && !(device.gfxAPI === API.WEBGL); // wegl 1  Single-channel float type is not supported under webgl1, so it is excluded
+        === (FormatFeatureBit.RENDER_TARGET | FormatFeatureBit.SAMPLED_TEXTURE);
 }
 
 export function isEnableEffect (): boolean {

@@ -46,6 +46,8 @@ export interface IEventDispatcher {
      * @returns Whether dispatch to next event dispatcher
      */
     dispatchEvent(event: Event): boolean;
+
+    onThrowException(): void;
 }
 
 class InputEventDispatcher implements IEventDispatcher {
@@ -54,6 +56,10 @@ class InputEventDispatcher implements IEventDispatcher {
 
     constructor (inputEventTarget: EventTarget) {
         this._inputEventTarget = inputEventTarget;
+    }
+
+    onThrowException (): void {
+        // empty
     }
 
     public dispatchEvent (event: Event): boolean {
@@ -337,9 +343,10 @@ export class Input {
                 if (!dispatcher.dispatchEvent(event)) {
                     break;
                 }
-            } catch (e) {
-                error(`Error occurs in an event listener: ${event.type}`);
-                error(e);
+            } catch (e: any) {
+                this._clearEvents();
+                dispatcher.onThrowException();
+                throw e;
             }
         }
     }
@@ -380,6 +387,12 @@ export class Input {
                 this._dispatchOrPushEvent(event, eventMouseList);
             });
             this._mouseInput.on(InputEventType.MOUSE_WHEEL, (event): void => {
+                this._dispatchOrPushEvent(event, eventMouseList);
+            });
+            this._mouseInput.on(InputEventType.MOUSE_LEAVE, (event): void => {
+                this._dispatchOrPushEvent(event, eventMouseList);
+            });
+            this._mouseInput.on(InputEventType.MOUSE_ENTER, (event): void => {
                 this._dispatchOrPushEvent(event, eventMouseList);
             });
         }

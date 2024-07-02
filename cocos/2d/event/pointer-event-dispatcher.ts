@@ -35,6 +35,8 @@ const mouseEvents = [
     Input.EventType.MOUSE_MOVE,
     Input.EventType.MOUSE_UP,
     Input.EventType.MOUSE_WHEEL,
+    Input.EventType.MOUSE_LEAVE,
+    Input.EventType.MOUSE_ENTER,
 ];
 const touchEvents = [
     Input.EventType.TOUCH_START,
@@ -58,6 +60,10 @@ class PointerEventDispatcher implements IEventDispatcher {
         NodeEventProcessor.callbacksInvoker.on(DispatcherEventType.ADD_POINTER_EVENT_PROCESSOR, this.addPointerEventProcessor, this);
         NodeEventProcessor.callbacksInvoker.on(DispatcherEventType.REMOVE_POINTER_EVENT_PROCESSOR, this.removePointerEventProcessor, this);
         NodeEventProcessor.callbacksInvoker.on(DispatcherEventType.MARK_LIST_DIRTY, this._markListDirty, this);
+    }
+
+    onThrowException (): void {
+        this._inDispatchCount = 0;
     }
 
     public dispatchEvent (event: Event): boolean {
@@ -151,6 +157,8 @@ class PointerEventDispatcher implements IEventDispatcher {
                         pointerEventProcessor._handleEventTouch(eventTouch);
                         if (eventTouch.type === InputEventType.TOUCH_END || eventTouch.type === InputEventType.TOUCH_CANCEL) {
                             js.array.removeAt(pointerEventProcessor.claimedTouchIdList, index);
+                            // The event is handled, so should remove other EventProcessor's claimedTouchIdList.
+                            this._removeClaimedTouch(i + 1, index);
                         }
                         dispatchToNextEventDispatcher = false;
                         if (!eventTouch.preventSwallow) {
@@ -166,6 +174,18 @@ class PointerEventDispatcher implements IEventDispatcher {
             this._updatePointerEventProcessorList();
         }
         return dispatchToNextEventDispatcher;
+    }
+
+    private _removeClaimedTouch (eventProcessorIndex: number, touchID: number): void {
+        const pointerEventProcessorList = this._pointerEventProcessorList;
+        const length = pointerEventProcessorList.length;
+        for (let i = eventProcessorIndex; i < length; ++i) {
+            const pointerEventProcessor = pointerEventProcessorList[i];
+            const touchIndex = pointerEventProcessor.claimedTouchIdList.indexOf(touchID);
+            if (touchIndex !== -1) {
+                js.array.removeAt(pointerEventProcessor.claimedTouchIdList, touchIndex);
+            }
+        }
     }
 
     private _updatePointerEventProcessorList (): void {

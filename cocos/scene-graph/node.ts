@@ -47,6 +47,7 @@ const DontDestroy = CCObject.Flags.DontDestroy;
 const Deactivating = CCObject.Flags.Deactivating;
 
 export const TRANSFORM_ON = 1 << 0;
+const ACTIVE_ON = 1 << 1;
 
 const idGenerator = new js.IDGenerator('Node');
 
@@ -221,7 +222,7 @@ export class Node extends CCObject implements ISchedulable, CustomSerializable {
     get parent (): Node | null {
         return this._parent;
     }
-    set parent (value) {
+    set parent (value: Node | null) {
         this.setParent(value);
     }
 
@@ -330,7 +331,11 @@ export class Node extends CCObject implements ISchedulable, CustomSerializable {
         return null;
     }
 
-    protected static _findChildComponents (children: Node[], constructor, components): void {
+    protected static _findChildComponents<T extends Component> (
+        children: Node[],
+        constructor: Constructor<T> | AbstractedConstructor<T>,
+        components: Component[],
+    ): void {
         for (let i = 0; i < children.length; ++i) {
             const node = children[i];
             Node._findComponents(node, constructor, components);
@@ -1001,9 +1006,10 @@ export class Node extends CCObject implements ISchedulable, CustomSerializable {
 
         const reqComps = (constructor as typeof constructor & { _requireComponent?: typeof Component })._requireComponent;
         if (reqComps) {
+            // FIXME: why it can be array here?
             if (Array.isArray(reqComps)) {
                 for (let i = 0; i < reqComps.length; i++) {
-                    const reqComp = reqComps[i];
+                    const reqComp = reqComps[i] as Constructor<Component>;
                     if (!this.getComponent(reqComp)) {
                         this.addComponent(reqComp);
                     }
@@ -1086,11 +1092,13 @@ export class Node extends CCObject implements ISchedulable, CustomSerializable {
             errorID(3813);
             return;
         }
+
         let componentInstance: Component | null = null;
         if (component instanceof Component) {
             componentInstance = component;
         } else {
-            componentInstance = this.getComponent(component);
+            // "component as string": Just make eslint happy.
+            componentInstance = this.getComponent(component as string);
         }
         if (componentInstance) {
             componentInstance.destroy();
@@ -1136,10 +1144,13 @@ export class Node extends CCObject implements ISchedulable, CustomSerializable {
      * node.on(NodeEventType.TOUCH_END, callback, this);
      * ```
      */
-    public on (type: string | NodeEventType, callback: AnyFunction, target?: unknown, useCapture: any = false): void {
+    public on (type: string | NodeEventType, callback: AnyFunction, target?: unknown, useCapture: boolean = false): void {
         switch (type) {
         case NodeEventType.TRANSFORM_CHANGED:
             this._eventMask |= TRANSFORM_ON;
+            break;
+        case NodeEventType.ACTIVE_CHANGED:
+            this._eventMask |= ACTIVE_ON;
             break;
         default:
             break;
@@ -1163,7 +1174,7 @@ export class Node extends CCObject implements ISchedulable, CustomSerializable {
      * node.off(NodeEventType.TOUCH_START, callback, this.node);
      * ```
      */
-    public off (type: string, callback?: AnyFunction, target?: unknown, useCapture: any = false): void {
+    public off (type: string, callback?: AnyFunction, target?: unknown, useCapture: boolean = false): void {
         this._eventProcessor.off(type as NodeEventType, callback, target, useCapture);
 
         const hasListeners = this._eventProcessor.hasEventListener(type);
@@ -1172,6 +1183,9 @@ export class Node extends CCObject implements ISchedulable, CustomSerializable {
             switch (type) {
             case NodeEventType.TRANSFORM_CHANGED:
                 this._eventMask &= ~TRANSFORM_ON;
+                break;
+            case NodeEventType.ACTIVE_CHANGED:
+                this._eventMask &= ~ACTIVE_ON;
                 break;
             default:
                 break;
@@ -1191,7 +1205,7 @@ export class Node extends CCObject implements ISchedulable, CustomSerializable {
      *                              The callback is ignored if it is a duplicate (the callbacks are unique).
      * @param target - The target (this object) to invoke the callback, can be null
      */
-    public once (type: string, callback: AnyFunction, target?: unknown, useCapture?: any): void {
+    public once (type: string, callback: AnyFunction, target?: unknown, useCapture?: boolean): void {
         this._eventProcessor.once(type as NodeEventType, callback, target, useCapture);
     }
 
@@ -1245,11 +1259,15 @@ export class Node extends CCObject implements ISchedulable, CustomSerializable {
      * @zh 移除目标上的所有注册事件。
      * @param target - The target to be searched for all related callbacks
      */
-    public targetOff (target: string | unknown): void {
+    public targetOff (target: unknown): void {
         this._eventProcessor.targetOff(target);
         // Check for event mask reset
         if ((this._eventMask & TRANSFORM_ON) && !this._eventProcessor.hasEventListener(NodeEventType.TRANSFORM_CHANGED)) {
             this._eventMask &= ~TRANSFORM_ON;
+        }
+
+        if ((this._eventMask & ACTIVE_ON) && !this._eventProcessor.hasEventListener(NodeEventType.ACTIVE_CHANGED)) {
+            this._eventMask &= ~ACTIVE_ON;
         }
     }
 
@@ -1312,9 +1330,9 @@ export class Node extends CCObject implements ISchedulable, CustomSerializable {
         this.emit(NodeEventType.CHILDREN_ORDER_CHANGED);
     }
 
-    protected _instantiate (cloned, isSyncedNode): any {
+    protected _instantiate (cloned?: Node | null, isSyncedNode: boolean = false): Node {
         if (!cloned) {
-            cloned = legacyCC.instantiate._clone(this, this);
+            cloned = legacyCC.instantiate._clone(this, this) as Node;
         }
 
         const newPrefabInfo = cloned._prefab;
@@ -1333,7 +1351,6 @@ export class Node extends CCObject implements ISchedulable, CustomSerializable {
         cloned._parent = null;
         cloned._onBatchCreated(isSyncedNode);
 
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
         return cloned;
     }
 
@@ -1616,10 +1633,14 @@ export class Node extends CCObject implements ISchedulable, CustomSerializable {
      */
     @editable
     get angle (): number {
-        return this._euler.z;
+        return this.eulerAngles.z;
     }
 
     set angle (val: number) {
+        if (this._euler.equals(v3_a.set(0, 0, val))) {
+            return;
+        }
+
         Vec3.set(this._euler, 0, 0, val);
         Quat.fromAngleZ(this._lrot, val);
         this._eulerDirty = false;
@@ -1727,7 +1748,11 @@ export class Node extends CCObject implements ISchedulable, CustomSerializable {
 
     @editable
     @type(MobilityMode)
-    set mobility (m) {
+    set mobility (m: number) {
+        if (this._mobility === m) {
+            return;
+        }
+
         this._mobility = m;
         this.emit(NodeEventType.MOBILITY_CHANGED);
     }
@@ -1741,7 +1766,11 @@ export class Node extends CCObject implements ISchedulable, CustomSerializable {
      * @zh 节点所属层，主要影响射线检测、物理碰撞等，参考 [[Layers]]
      */
     @editable
-    set layer (l) {
+    set layer (l: number) {
+        if (this._layer === l) {
+            return;
+        }
+
         this._layer = l;
 
         if (this._uiProps && this._uiProps.uiComp) {
@@ -1882,6 +1911,12 @@ export class Node extends CCObject implements ISchedulable, CustomSerializable {
      * @deprecated since v3.5.0, this is an engine private interface that will be removed in the future.
      */
     public _onBatchCreated (dontSyncChildPrefab: boolean): void {
+        if (this._eventMask & ACTIVE_ON) {
+            if (!this._activeInHierarchy) {
+                this.emit(NodeEventType.ACTIVE_CHANGED, this, false);
+            }
+        }
+
         this.hasChangedFlags = TransformBit.TRS;
         const len = this._children.length;
         for (let i = 0; i < len; ++i) {
@@ -1902,8 +1937,13 @@ export class Node extends CCObject implements ISchedulable, CustomSerializable {
      * @deprecated since v3.5.0, this is an engine private interface that will be removed in the future.
      */
     public _onPostActivated (active: boolean): void {
+        if (this._eventMask & ACTIVE_ON) {
+            this.emit(NodeEventType.ACTIVE_CHANGED, this, active);
+        }
+
+        this._eventProcessor.setEnabled(active);
+
         if (active) { // activated
-            this._eventProcessor.setEnabled(true);
             // in case transform updated during deactivated period
             this.invalidateChildren(TransformBit.TRS);
             // ALL Node renderData dirty flag will set on here
@@ -1912,8 +1952,6 @@ export class Node extends CCObject implements ISchedulable, CustomSerializable {
                 this._uiProps.uiComp.setTextureDirty(); // for dynamic atlas
                 this._uiProps.uiComp.markForUpdateRenderData();
             }
-        } else { // deactivated
-            this._eventProcessor.setEnabled(false);
         }
     }
 
@@ -2106,12 +2144,25 @@ export class Node extends CCObject implements ISchedulable, CustomSerializable {
     public setPosition(x: number, y: number, z?: number): void;
 
     public setPosition (val: Readonly<Vec3> | number, y?: number, z?: number): void {
-        if (y === undefined && z === undefined) {
-            Vec3.copy(this._lpos, val as Vec3);
-        } else if (z === undefined) {
-            Vec3.set(this._lpos, val as number, y!, this._lpos.z);
+        const localPosition = this._lpos;
+
+        if (y === undefined) {
+            // The type of val is Readonly<Vec3>
+            if (localPosition.equals(val as Vec3)) {
+                return;
+            }
+
+            Vec3.copy(localPosition, val as Vec3);
         } else {
-            Vec3.set(this._lpos, val as number, y!, z);
+            if (z === undefined) {
+                z = localPosition.z;
+            }
+
+            if (localPosition.equals(v3_a.set(val as number, y, z))) {
+                return;
+            }
+
+            Vec3.copy(localPosition, v3_a);
         }
 
         this.invalidateChildren(TransformBit.POSITION);
@@ -2153,13 +2204,23 @@ export class Node extends CCObject implements ISchedulable, CustomSerializable {
     public setRotation(x: number, y: number, z: number, w: number): void;
 
     public setRotation (val: Readonly<Quat> | number, y?: number, z?: number, w?: number): void {
-        if (y === undefined || z === undefined || w === undefined) {
-            Quat.copy(this._lrot, val as Readonly<Quat>);
-        } else {
-            Quat.set(this._lrot, val as number, y, z, w);
-        }
-        this._eulerDirty = true;
+        const localRotation = this._lrot;
 
+        if (y === undefined) {
+            if (localRotation.equals(val as Quat)) {
+                return;
+            }
+
+            Quat.copy(localRotation, val as Quat);
+        } else {
+            if (localRotation.equals(q_a.set(val as number, y, z, w))) {
+                return;
+            }
+
+            Quat.copy(localRotation, q_a);
+        }
+
+        this._eulerDirty = true;
         this.invalidateChildren(TransformBit.ROTATION);
         if (this._eventMask & TRANSFORM_ON) {
             this.emit(NodeEventType.TRANSFORM_CHANGED, TransformBit.ROTATION);
@@ -2178,18 +2239,28 @@ export class Node extends CCObject implements ISchedulable, CustomSerializable {
      * @zh 用欧拉角设置本地旋转
      * @param x X axis rotation
      * @param y Y axis rotation
-     * @param z Z axis rotation
+     * @param zOpt Z axis rotation
      */
     public setRotationFromEuler(x: number, y: number, zOpt?: number): void;
 
     public setRotationFromEuler (val: Vec3 | number, y?: number, zOpt?: number): void {
-        const z = zOpt === undefined ? this._euler.z : zOpt;
+        const euler = this._euler;
 
         if (y === undefined) {
-            Vec3.copy(this._euler, val as Vec3);
+            if (euler.equals(val as Vec3)) {
+                return;
+            }
+
+            Vec3.copy(euler, val as Vec3);
             Quat.fromEuler(this._lrot, (val as Vec3).x, (val as Vec3).y, (val as Vec3).z);
         } else {
-            Vec3.set(this._euler, val as number, y, z);
+            const z = zOpt === undefined ? this._euler.z : zOpt;
+            Vec3.set(v3_a, val as number, y, z);
+            if (euler.equals(v3_a)) {
+                return;
+            }
+
+            Vec3.copy(euler, v3_a);
             Quat.fromEuler(this._lrot, val as number, y, z);
         }
 
@@ -2231,15 +2302,29 @@ export class Node extends CCObject implements ISchedulable, CustomSerializable {
     public setScale(x: number, y: number, z?: number): void;
 
     public setScale (val: Readonly<Vec3> | number, y?: number, z?: number): void {
-        if (y === undefined && z === undefined) {
-            Vec3.copy(this._lscale, val as Vec3);
-        } else if (z === undefined) {
-            Vec3.set(this._lscale, val as number, y!, this._lscale.z);
+        const localScale = this._lscale;
+
+        if (y === undefined) {
+            if (localScale.equals(val as Vec3)) {
+                return;
+            }
+
+            Vec3.copy(localScale, val as Vec3);
         } else {
-            Vec3.set(this._lscale, val as number, y!, z);
+            if (z === undefined) {
+                z = localScale.z;
+            }
+
+            Vec3.set(v3_a, val as number, y, z);
+            if (localScale.equals(v3_a)) {
+                return;
+            }
+
+            Vec3.copy(localScale, v3_a);
         }
 
         this.invalidateChildren(TransformBit.SCALE);
+
         if (this._eventMask & TRANSFORM_ON) {
             this.emit(NodeEventType.TRANSFORM_CHANGED, TransformBit.SCALE);
         }
@@ -2298,23 +2383,43 @@ export class Node extends CCObject implements ISchedulable, CustomSerializable {
     public setWorldPosition(x: number, y: number, z: number): void;
 
     public setWorldPosition (val: Vec3 | number, y?: number, z?: number): void {
-        if (y === undefined || z === undefined) {
-            Vec3.copy(this._pos, val as Vec3);
+        const worldPosition = this._pos;
+
+        // Force update may happen in the situation:
+        // - node is created, and added to a scene
+        // - set node's world position to default value(Vec3.ZERO), which equals to node._pos
+        // Then need to update local position, or local position will be wrong.
+        const forceUpdateLocalPosition = this._parent
+                                         && (this._transformFlags & TransformBit.POSITION) !== TransformBit.NONE;
+
+        if (y === undefined) {
+            if (!forceUpdateLocalPosition && worldPosition.equals(val as Vec3)) {
+                return;
+            }
+
+            Vec3.copy(worldPosition, val as Vec3);
         } else {
-            Vec3.set(this._pos, val as number, y, z);
+            Vec3.set(v3_a, val as number, y, z!);
+
+            if (!forceUpdateLocalPosition && worldPosition.equals(v3_a)) {
+                return;
+            }
+
+            Vec3.copy(worldPosition, v3_a);
         }
+
         const parent = this._parent;
         const local = this._lpos;
         if (parent) {
             // TODO: benchmark these approaches
             /* */
             parent.updateWorldTransform();
-            Vec3.transformMat4(local, this._pos, Mat4.invert(m4_1, parent._mat));
+            Vec3.transformMat4(local, worldPosition, Mat4.invert(m4_1, parent._mat));
             /* *
             parent.inverseTransformPoint(local, this._pos);
             /* */
         } else {
-            Vec3.copy(local, this._pos);
+            Vec3.copy(local, worldPosition);
         }
 
         this.invalidateChildren(TransformBit.POSITION);
@@ -2355,16 +2460,35 @@ export class Node extends CCObject implements ISchedulable, CustomSerializable {
     public setWorldRotation(x: number, y: number, z: number, w: number): void;
 
     public setWorldRotation (val: Quat | number, y?: number, z?: number, w?: number): void {
-        if (y === undefined || z === undefined || w === undefined) {
-            Quat.copy(this._rot, val as Quat);
+        const worldRotation = this._rot;
+
+        // Force update may happen in the situation:
+        // - node is created, and added to a scene
+        // - set node's world rotation to default value(Vec3.ZERO), which equals to node._rot
+        // Then need to update local rotation.
+        const forceUpdateLocalRotation = this._parent
+                                        && (this._transformFlags & TransformBit.ROTATION) !== TransformBit.NONE;
+
+        if (y === undefined) {
+            if (!forceUpdateLocalRotation && worldRotation.equals(val as Quat)) {
+                return;
+            }
+
+            Quat.copy(worldRotation, val as Quat);
         } else {
-            Quat.set(this._rot, val as number, y, z, w);
+            Quat.set(q_a, val as number, y, z!, w!);
+            if (!forceUpdateLocalRotation && worldRotation.equals(q_a)) {
+                return;
+            }
+
+            Quat.copy(worldRotation, q_a);
         }
+
         if (this._parent) {
             this._parent.updateWorldTransform();
-            Quat.multiply(this._lrot, Quat.conjugate(this._lrot, this._parent._rot), this._rot);
+            Quat.multiply(this._lrot, Quat.conjugate(this._lrot, this._parent._rot), worldRotation);
         } else {
-            Quat.copy(this._lrot, this._rot);
+            Quat.copy(this._lrot, worldRotation);
         }
         this._eulerDirty = true;
 
@@ -2382,19 +2506,8 @@ export class Node extends CCObject implements ISchedulable, CustomSerializable {
      * @param z Z axis rotation
      */
     public setWorldRotationFromEuler (x: number, y: number, z: number): void {
-        Quat.fromEuler(this._rot, x, y, z);
-        if (this._parent) {
-            this._parent.updateWorldTransform();
-            Quat.multiply(this._lrot, Quat.conjugate(this._lrot, this._parent._rot), this._rot);
-        } else {
-            Quat.copy(this._lrot, this._rot);
-        }
-        this._eulerDirty = true;
-
-        this.invalidateChildren(TransformBit.ROTATION);
-        if (this._eventMask & TRANSFORM_ON) {
-            this.emit(NodeEventType.TRANSFORM_CHANGED, TransformBit.ROTATION);
-        }
+        Quat.fromEuler(q_a, x, y, z);
+        this.setWorldRotation(q_a);
     }
 
     /**
@@ -2428,19 +2541,36 @@ export class Node extends CCObject implements ISchedulable, CustomSerializable {
     public setWorldScale(x: number, y: number, z: number): void;
 
     public setWorldScale (val: Vec3 | number, y?: number, z?: number): void {
+        const worldScale = this._scale;
+
+        // Force update may happen in the situation:
+        // - node is created, and added to a scene
+        // - set node's world scale to default value(Vec3(1,1,1)), which equals to node._scale
+        // Then need to update local scale.
+        const forceUpdateLocalScale = this._parent
+                                    && (this._transformFlags & TransformBit.SCALE) !== TransformBit.NONE;
         const parent = this._parent;
         if (parent) {
             this.updateWorldTransform();
         }
-        if (y === undefined || z === undefined) {
-            Vec3.copy(this._scale, val as Vec3);
+        if (y === undefined) {
+            if (!forceUpdateLocalScale && worldScale.equals(val as Vec3)) {
+                return;
+            }
+
+            Vec3.copy(worldScale, val as Vec3);
         } else {
-            Vec3.set(this._scale, val as number, y, z);
+            Vec3.set(v3_a, val as number, y, z!);
+            if (!forceUpdateLocalScale && worldScale.equals(v3_a)) {
+                return;
+            }
+
+            Vec3.copy(worldScale, v3_a);
         }
         if (parent) {
-            v3_a.x = this._scale.x / Vec3.set(v3_b, this._mat.m00, this._mat.m01, this._mat.m02).length();
-            v3_a.y = this._scale.y / Vec3.set(v3_b, this._mat.m04, this._mat.m05, this._mat.m06).length();
-            v3_a.z = this._scale.z / Vec3.set(v3_b, this._mat.m08, this._mat.m09, this._mat.m10).length();
+            v3_a.x = worldScale.x / Vec3.set(v3_b, this._mat.m00, this._mat.m01, this._mat.m02).length();
+            v3_a.y = worldScale.y / Vec3.set(v3_b, this._mat.m04, this._mat.m05, this._mat.m06).length();
+            v3_a.z = worldScale.z / Vec3.set(v3_b, this._mat.m08, this._mat.m09, this._mat.m10).length();
             Mat4.scale(m4_1, this._mat, v3_a);
             Mat4.multiply(m4_2, Mat4.invert(m4_2, parent._mat), m4_1);
             Mat3.fromQuat(m3_1, Quat.conjugate(qt_1, this._lrot));
@@ -2449,7 +2579,7 @@ export class Node extends CCObject implements ISchedulable, CustomSerializable {
             this._lscale.y = Vec3.set(v3_a, m3_1.m03, m3_1.m04, m3_1.m05).length();
             this._lscale.z = Vec3.set(v3_a, m3_1.m06, m3_1.m07, m3_1.m08).length();
         } else {
-            Vec3.copy(this._lscale, this._scale);
+            Vec3.copy(this._lscale, worldScale);
         }
 
         this.invalidateChildren(TransformBit.SCALE);
